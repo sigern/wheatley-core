@@ -3,10 +3,17 @@
 
 #include "../include/LED.h"
 #include "../include/Servo.h"
+#include "../include/Bluetooth.h"
 
-static osThreadId_t tid_thrLEDBlinker;     // Thread id of thread: LEDBlinker
-static osThreadId_t tid_thrServoModulator; // Thread id of thread: ServoModulator
+extern void Error_Handler(void);
 
+static osThreadId_t tid_thrLEDBlinker;           // Thread id of thread: LEDBlinker
+static osThreadId_t tid_thrServoModulator;       // Thread id of thread: ServoModulator
+static osThreadId_t tid_thrBluetoothTransmitter; // Thread id of thread: Bluetooth Transmitter
+
+extern UART_HandleTypeDef huart6;
+extern DMA_HandleTypeDef hdma_usart6_rx;
+extern uint8_t UART6_rxBuffer[12];
 
 /*------------------------------------------------------------------------------
   thrLEDBlinker: blink LED
@@ -32,6 +39,19 @@ __NO_RETURN void thrServoModulator (void *argument) {
   }
 }
 
+/*------------------------------------------------------------------------------
+  thrLEDBlinker: Transmit data via Bluetooth
+ *----------------------------------------------------------------------------*/
+__NO_RETURN void thrBluetoothTransmitter (void *argument) {
+  //if(HAL_UART_Receive_DMA(&huart6, (uint8_t *)UART6_rxBuffer, 12) != HAL_OK)
+ // {
+ //   Error_Handler();
+ // }
+  for (;;) {
+		//Bluetooth_Send(UART6_rxBuffer);
+    osDelay (1000U);  // Delay 2000 ms
+  }
+}
 
 /*------------------------------------------------------------------------------
  * Application main thread
@@ -42,6 +62,8 @@ void app_main (void *argument) {
 	 LED_Init();
 	 /* Initialize PWM for roll and tilt servos */
 	 ServosInit();
+		/* Initialize USART and DMA for serial communication via Bluetooth */
+	 Bluetooth_Init();
 
 	/* Create LED blink thread */
   tid_thrLEDBlinker = osThreadNew(thrLEDBlinker, NULL, NULL); 
@@ -50,6 +72,10 @@ void app_main (void *argument) {
 	/* Create Servo Modulator thread */
   tid_thrServoModulator = osThreadNew(thrServoModulator, NULL, NULL); 
   if (tid_thrServoModulator == NULL) { /* add error handling */ }
+	
+	/* Create serial transfer thread */
+  //tid_thrBluetoothTransmitter = osThreadNew(thrBluetoothTransmitter, NULL, NULL); 
+  //if (tid_thrServoModulator == NULL) { /* add error handling */ }
 
   osThreadExit();
 }
