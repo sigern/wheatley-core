@@ -169,7 +169,7 @@ static void TIM5_Init(void)
   HAL_TIM_MspPostInit(&htim5);
 }
 
-void ServosInit(void)
+void Servo_Init(void)
 {
 	/* Tilt servo init */
 	TIM2_Init();

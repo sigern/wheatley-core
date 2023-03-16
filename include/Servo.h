@@ -9,6 +9,6 @@
 #define ROLL_FORWARD_DEADZONE 37125 // ROLL_ZERO + 20
 #define ROLL_FORWARD_LIMIT    37270 // ROLL_ZERO + 165
 
-void ServosInit(void);
+void Servo_Init(void);
 
 #endif /* __SERVO_H */
