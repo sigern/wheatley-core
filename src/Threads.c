@@ -5,13 +5,14 @@
 #include "../include/Servo.h"
 #include "../include/Bluetooth.h"
 #include "../include/CRC.h"
+#include "../include/defines.h"
 
 extern void Error_Handler(void);
 
 static osThreadId_t tid_thrLEDBlinker;           // Thread id of thread: LEDBlinker
 static osThreadId_t tid_thrServoModulator;       // Thread id of thread: ServoModulator
 static osThreadId_t tid_thrFrameParser;          // Thread id of thread: FrameParser
-static osThreadId_t tid_thrBluetoothTransmitter; // Thread id of thread: Bluetooth Transmitter
+static osThreadId_t tid_thrSender;               // Thread id of thread: Sender
 
 extern UART_HandleTypeDef huart6;
 extern uint8_t UART6_rxBuffer;
@@ -59,8 +60,35 @@ __NO_RETURN void thrFrameParser (void *argument) {
 			{
 				textCrc[i] = *ptr;
 	  	}
-			Bluetooth_Send(textCrc, 4);
+			//Bluetooth_Send(textCrc, 4);
 		}
+  }
+}
+
+/*------------------------------------------------------------------------------
+  thrSender: Send frame via UART
+ *----------------------------------------------------------------------------*/
+__NO_RETURN void thrSender (void *argument) {
+	uint16_t testTilt = 0;
+	uint16_t testRoll = 0;
+	uint8_t testFrame[] = {
+		FRAME_START, 
+	  FRAME_TYPE_SERVO_VALUE, 
+	  (uint8_t)(testTilt & 0xFF),
+	  (uint8_t)(testTilt >> 8 & 0xFF), 
+	  (uint8_t)(testRoll & 0xFF), 
+	  (uint8_t)(testRoll >> 8	& 0xFF),
+    FRAME_END
+	};
+  for (;;) {
+		osDelay (200U);  // Delay 2000 ms
+		Bluetooth_Send(testFrame, sizeof(testFrame));
+		testTilt++;
+		testRoll++;
+		testFrame[2] = (uint8_t)(testTilt >> 8 & 0xFF);
+		testFrame[3] = (uint8_t)(testTilt & 0xFF);
+		testFrame[4] = (uint8_t)(testRoll >> 8 & 0xFF);
+		testFrame[5] = (uint8_t)(testRoll & 0xFF);
   }
 }
 
@@ -87,13 +115,13 @@ void app_main (void *argument) {
   tid_thrServoModulator = osThreadNew(thrServoModulator, NULL, NULL); 
   if (tid_thrServoModulator == NULL) { /* add error handling */ }
 	
-	/* Create serial transfer thread */
+	/* Create RX frame parser thread */
   tid_thrFrameParser = osThreadNew(thrFrameParser, NULL, NULL); 
   if (tid_thrFrameParser == NULL) { /* add error handling */ }
 	
-	/* Create serial transfer thread */
-  //tid_thrBluetoothTransmitter = osThreadNew(thrBluetoothTransmitter, NULL, NULL); 
-  //if (tid_thrServoModulator == NULL) { /* add error handling */ }
+	/* Create TX frame sender thread */
+  tid_thrSender = osThreadNew(thrSender, NULL, NULL); 
+  if (tid_thrSender == NULL) { /* add error handling */ }
 
   osThreadExit();
 }
