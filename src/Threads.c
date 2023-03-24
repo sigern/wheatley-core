@@ -7,10 +7,7 @@
 #include "../include/CRC.h"
 #include "../include/defines.h"
 
-extern void Error_Handler(void);
-
 static osThreadId_t tid_thrLEDBlinker;           // Thread id of thread: LEDBlinker
-static osThreadId_t tid_thrServoModulator;       // Thread id of thread: ServoModulator
 static osThreadId_t tid_thrFrameParser;          // Thread id of thread: FrameParser
 static osThreadId_t tid_thrSender;               // Thread id of thread: Sender
 static osThreadId_t tid_thrController;           // Thread id of thread: Controller
@@ -19,27 +16,40 @@ extern UART_HandleTypeDef huart6;
 extern uint8_t UART6_rxBuffer;
 extern osMessageQueueId_t UartRxMsgQueueId;  // message queue id
 
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(uint8_t val)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+	if (val == 0) {
+		LED_On(GREEN);
+	} else if (val == 1) {
+		LED_On(ORANGE);
+	} else if (val == 2) {
+	  LED_On(RED);
+	} else {
+		LED_On(BLUE);
+	}
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+
 /*------------------------------------------------------------------------------
   thrLEDBlinker: blink LED
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrLEDBlinker (void *argument) {
   for (;;) {
-    LED_On(RED | ORANGE | BLUE | GREEN);
+    //LED_On(RED | ORANGE | BLUE | GREEN);
     osDelay (500U);  // Delay 500 ms
-    LED_Off(RED | ORANGE | BLUE | GREEN);	
+    //LED_Off(RED | ORANGE | BLUE | GREEN);	
     osDelay (500U);  // Delay 500 ms
-  }
-}
-
-/*------------------------------------------------------------------------------
-  thrServoModulator: Modulate Servo
- *----------------------------------------------------------------------------*/
-__NO_RETURN void thrServoModulator (void *argument) {
-  for (;;) {
-     //ServoTilt_Set(0);
-    osDelay (2000U);  // Delay 2000 ms
-     //ServoTilt_Set(19999);
-    osDelay (2000U);  // Delay 2000 ms
   }
 }
 
@@ -47,49 +57,79 @@ __NO_RETURN void thrServoModulator (void *argument) {
   thrFrameParser: Parse frame received via UART
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrFrameParser (void *argument) {
-	uint8_t receiverState = NONE;
+	uint8_t sm_state = NONE;
+  uint8_t	current_frame = NONE;
 	uint8_t msg = 0u;
+	
+	bool servo_enabled_cache = false;
 	uint8_t tilt_cache = JOYSTICK_ZERO;
 	uint8_t roll_cache = JOYSTICK_ZERO;
+	uint8_t crc_cache = 0u;
+	
 	osStatus_t status;
 	
   for (;;) {
-		status = osMessageQueueGet(UartRxMsgQueueId, &msg, NULL, NULL);  // wait for message
+		status = osMessageQueueGet(UartRxMsgQueueId, &msg, NULL, 100);  // wait for message
 		if (status == osOK) {
-      switch(receiverState) {
+      switch(sm_state) {
         case NONE:
           if (msg == FRAME_START) {
-            receiverState = CHECK_TYPE;
+            sm_state = CHECK_TYPE;
           }
           break;
         case CHECK_TYPE:
           if (msg == FRAME_TYPE_JOYSTICK) {
-						receiverState = JOYSTICK_TILT;
+						sm_state = JOYSTICK_TILT;
+						current_frame = FRAME_TYPE_JOYSTICK;
+					} else if (msg == FRAME_TYPE_SERVO_ENABLED) {
+						sm_state = SERVO_ENABLED;
+						current_frame = FRAME_TYPE_SERVO_ENABLED;
           } else {
-            receiverState = NONE;
+            sm_state = NONE;
+						current_frame = NONE;
           }
           break;
         case JOYSTICK_TILT:
 					tilt_cache = (uint8_t)msg;
-          receiverState = JOYSTICK_ROLL;
+          sm_state = JOYSTICK_ROLL;
           break;
 				case JOYSTICK_ROLL:
           roll_cache = (uint8_t)msg;
-          receiverState = CHECK_END;
+          sm_state = JOYSTICK_CRC;
           break;
+				case JOYSTICK_CRC:
+          crc_cache = (uint8_t)msg;
+					uint8_t crc_input[] = {tilt_cache, roll_cache};
+					if (CRC8(crc_input, 2) == crc_cache) {
+						sm_state = CHECK_END;
+					} else {
+				    sm_state = NONE;
+						current_frame = NONE;
+					}
+          break;
+				case SERVO_ENABLED:
+					servo_enabled_cache = (uint8_t)msg;
+				  sm_state = CHECK_END;
+				  break;
 				case CHECK_END:
 					if (msg == FRAME_END) {
-						g_joystick.tilt = tilt_cache;
-						g_joystick.roll = roll_cache;
+						if (current_frame == FRAME_TYPE_JOYSTICK) {
+							g_joystick.tilt = tilt_cache;
+						  g_joystick.roll = roll_cache;
+						} else if (current_frame == FRAME_TYPE_SERVO_ENABLED) {
+							Servo_Enable(servo_enabled_cache);
+						}							
           }
-          receiverState = NONE;
+          sm_state = NONE;
+					current_frame = NONE;
           break;
         default:
-          receiverState = NONE;
+          sm_state = NONE;
+				  current_frame = NONE;
           break;
       }
 		}
-		
+		#if 0
 		if(g_joystick.tilt < 60) {
 			LED_Off(RED);
 			LED_On(GREEN);
@@ -101,6 +141,7 @@ __NO_RETURN void thrFrameParser (void *argument) {
 			LED_Off(GREEN);
 		}
 		
+
 		if(g_joystick.roll < 60) {
 			LED_Off(ORANGE);
 			LED_On(BLUE);
@@ -111,6 +152,11 @@ __NO_RETURN void thrFrameParser (void *argument) {
 			LED_Off(BLUE);
 			LED_Off(ORANGE);
 		}
+		#endif
+		osMutexAcquire(robotStateMutex_id, osWaitForever);
+		g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)g_joystick.roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
+		g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
+		osMutexRelease(robotStateMutex_id);
 	}
 }
 
@@ -130,16 +176,41 @@ __NO_RETURN void thrSender (void *argument) {
     FRAME_END
 	};
   for (;;) {
-		uint32_t queueSize = osMessageQueueGetCount(UartRxMsgQueueId);
-		osDelay (100);  // Delay 2000 ms
+		osDelay (250);
 		Bluetooth_Send(testFrame, sizeof(testFrame));
-		testTilt++;
-		testRoll++;
-		testFrame[2] = (uint8_t)(queueSize >> 8 & 0xFF);
-		testFrame[3] = (uint8_t)(queueSize & 0xFF);
-		testFrame[4] = (uint8_t)(0 >> 8 & 0xFF);
-		testFrame[5] = (uint8_t)(g_joystick.roll & 0xFF);
+		testFrame[2] = (uint8_t)(g_wheatley.tilt_servo >> 8 & 0xFF);
+		testFrame[3] = (uint8_t)(g_wheatley.tilt_servo & 0xFF);
+		testFrame[4] = (uint8_t)(g_wheatley.roll_servo >> 8 & 0xFF);
+		testFrame[5] = (uint8_t)(g_wheatley.roll_servo & 0xFF);
   }
+}
+
+/*------------------------------------------------------------------------------
+  thrSender: Send frame via UART
+ *----------------------------------------------------------------------------*/
+__NO_RETURN void thrController (void *argument) {
+	uint16_t roll = ROLL_ZERO;
+	uint16_t tilt = TILT_ZERO;
+  for (;;) {
+		osDelay (20);
+		
+		osMutexAcquire(robotStateMutex_id, osWaitForever);
+		roll = g_wheatley.roll_servo;
+		tilt = g_wheatley.tilt_servo;
+		osMutexRelease(robotStateMutex_id);
+		
+		if (roll >= ROLL_BACK_LIMIT && roll <= ROLL_FORWARD_LIMIT) {
+			ServoRoll_Set(roll);
+		}
+		if (tilt <= TILT_RIGHT_LIMIT && tilt >= TILT_LEFT_LIMIT) {
+			ServoTilt_Set(tilt);
+		}
+  }
+}
+
+void Create_Mutexes() {
+	joystickStateMutex_id = osMutexNew(&joystickStateMutex_attr);
+	robotStateMutex_id = osMutexNew(&robotStateMutex_attr);
 }
 
 /*------------------------------------------------------------------------------
@@ -153,17 +224,13 @@ void app_main (void *argument) {
 	 Servo_Init();
 	 /* Initialize USART and DMA for serial communication via Bluetooth */
 	 Bluetooth_Init();
-	 /* Initialize CRC peripheral for communication frame checksum calculation */
-	 CRC_Init();
-
+	
+	 /* Create mutexes for global variables */
+	 Create_Mutexes();
 
 	/* Create LED blink thread */
   tid_thrLEDBlinker = osThreadNew(thrLEDBlinker, NULL, NULL); 
   if (tid_thrLEDBlinker == NULL) { /* add error handling */ }
-	
-	/* Create Servo Modulator thread */
-  tid_thrServoModulator = osThreadNew(thrServoModulator, NULL, NULL); 
-  if (tid_thrServoModulator == NULL) { /* add error handling */ }
 	
 	/* Create RX frame parser thread */
   tid_thrFrameParser = osThreadNew(thrFrameParser, NULL, NULL); 
@@ -172,6 +239,10 @@ void app_main (void *argument) {
 	/* Create TX frame sender thread */
   tid_thrSender = osThreadNew(thrSender, NULL, NULL); 
   if (tid_thrSender == NULL) { /* add error handling */ }
+	
+	/* Create servo controller thread */
+  tid_thrController = osThreadNew(thrController, NULL, NULL); 
+  if (tid_thrController == NULL) { /* add error handling */ }
 
   osThreadExit();
 }

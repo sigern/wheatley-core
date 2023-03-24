@@ -5,7 +5,7 @@ UART_HandleTypeDef huart6;
 osMessageQueueId_t UartRxMsgQueueId;  // message queue id
 uint8_t UART6_rxBuffer;
 
-extern void Error_Handler(void);
+extern void Error_Handler(uint8_t val);
 
 /**
 * @brief UART MSP Initialization
@@ -68,11 +68,15 @@ void USART6_IRQHandler(void)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART6)
 	{
-		osMessageQueuePut (UartRxMsgQueueId, &UART6_rxBuffer, 0, NULL);		
-		if(HAL_UART_Receive_IT(&huart6, &UART6_rxBuffer, 1) != HAL_OK)
-		{
-			Error_Handler();
-		}
+		osMessageQueuePut (UartRxMsgQueueId, &UART6_rxBuffer, 0, NULL);
+    HAL_StatusTypeDef ret = HAL_UART_Receive_IT(&huart6, &UART6_rxBuffer, 1);
+		if(ret == HAL_BUSY) {
+			Error_Handler(0);
+		} else if (ret == HAL_ERROR) {
+			Error_Handler(1);
+		} else if (ret != HAL_OK) {
+			Error_Handler(2);
+		} 
 	}
 }
 
@@ -92,20 +96,22 @@ void Bluetooth_Init()
   huart6.Init.OverSampling = UART_OVERSAMPLING_8;
 	
   if (HAL_UART_Init(&huart6) != HAL_OK) {
-    Error_Handler();
+    Error_Handler(2);
   }
 	
 	if(HAL_UART_Receive_IT(&huart6, &UART6_rxBuffer, 1) != HAL_OK) {
-		Error_Handler();
+		Error_Handler(0);
   }
 	
 	UartRxMsgQueueId = osMessageQueueNew(UART_RX_QUEUE_SIZE, sizeof(uint8_t), NULL);
   if (!UartRxMsgQueueId) {
-    Error_Handler();
+    Error_Handler(3);
   }
 }
 
 void Bluetooth_Send(uint8_t* data, uint8_t length)
 {
+	__disable_irq();
 	HAL_UART_Transmit(&huart6, data, length, 0xFF);
+	__enable_irq();
 }

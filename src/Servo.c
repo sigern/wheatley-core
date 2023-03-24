@@ -3,20 +3,7 @@
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim5;
 
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
-}
+extern void Error_Handler(uint8_t val);
 
 /**
 * @brief TIM_PWM MSP Initialization
@@ -112,7 +99,7 @@ static void TIM2_Init(void)
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK) {
-    Error_Handler();
+    Error_Handler(1);
   }
 	
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
@@ -120,7 +107,7 @@ static void TIM2_Init(void)
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK) {
-    Error_Handler();
+    Error_Handler(1);
   }
   HAL_TIM_MspPostInit(&htim2);
 }
@@ -154,7 +141,7 @@ static void TIM5_Init(void)
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim5) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(1);
   }
 
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
@@ -163,7 +150,7 @@ static void TIM5_Init(void)
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(1);
   }
 	
   HAL_TIM_MspPostInit(&htim5);
@@ -175,15 +162,30 @@ void Servo_Init(void)
 	TIM2_Init();
 	if (HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4) != HAL_OK) {
 		/* PWM Generation Error for TIM2_CH4 */
-		Error_Handler();
+		Error_Handler(1);
 	}
+	ServoTilt_Set(TILT_ZERO);
 	
+	#if 1
 	/* Roll servo init */
 	TIM5_Init();
 	if (HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_3) != HAL_OK) {
 	  /* PWM Generation Error for TIM5_CH3 */
-	  Error_Handler();
+	  Error_Handler(1);
   }
+	ServoRoll_Set(ROLL_ZERO);
+	#endif
+}
+
+void Servo_Enable(bool isEnable)
+{
+	if (isEnable) {
+		__HAL_TIM_ENABLE(&htim2);
+		__HAL_TIM_ENABLE(&htim5);
+	} else {
+		__HAL_TIM_DISABLE(&htim2);
+		__HAL_TIM_DISABLE(&htim5);
+	}
 }
 
 void ServoRoll_Set(uint16_t value)
