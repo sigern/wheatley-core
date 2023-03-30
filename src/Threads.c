@@ -2,6 +2,7 @@
 #include "stm32f4xx_hal.h"
 
 #include "../include/LED.h"
+#include "../include/Accelerometer.h"
 #include "../include/Servo.h"
 #include "../include/Bluetooth.h"
 #include "../include/CRC.h"
@@ -46,9 +47,9 @@ void Error_Handler(uint8_t val)
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrLEDBlinker (void *argument) {
   for (;;) {
-    //LED_On(RED | ORANGE | BLUE | GREEN);
+    LED_On(RED | ORANGE | BLUE | GREEN);
     osDelay (500U);  // Delay 500 ms
-    //LED_Off(RED | ORANGE | BLUE | GREEN);	
+    LED_Off(RED | ORANGE | BLUE | GREEN);	
     osDelay (500U);  // Delay 500 ms
   }
 }
@@ -187,9 +188,11 @@ __NO_RETURN void thrSender (void *argument) {
 	};
   for (;;) {
 		osDelay (250);
+		int16_t accData[3];
+		ACC_GetXYZ(accData);
 		Bluetooth_Send(testFrame, sizeof(testFrame));
-		testFrame[2] = (uint8_t)(g_wheatley.tilt_servo >> 8 & 0xFF);
-		testFrame[3] = (uint8_t)(g_wheatley.tilt_servo & 0xFF);
+		testFrame[2] = (uint8_t)(accData[0] >> 8 & 0xFF);
+		testFrame[3] = (uint8_t)(accData[0] & 0xFF);
 		testFrame[4] = (uint8_t)(g_wheatley.roll_servo >> 8 & 0xFF);
 		testFrame[5] = (uint8_t)(g_wheatley.roll_servo & 0xFF);
   }
@@ -236,6 +239,8 @@ void app_main (void *argument) {
 
 	 /* Initialize Board LEDs */
 	 LED_Init();
+	 /* Initialize LSM303DLHC accelerometer */
+	 ACC_Init();
 	 /* Initialize PWM for roll and tilt servos */
 	 //Servo_Init();
 	 /* Initialize USART and DMA for serial communication via Bluetooth */
