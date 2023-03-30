@@ -3,6 +3,7 @@
 
 #include "../include/LED.h"
 #include "../include/Accelerometer.h"
+#include "../include/Gyroscope.h"
 #include "../include/Servo.h"
 #include "../include/Bluetooth.h"
 #include "../include/CRC.h"
@@ -137,30 +138,7 @@ __NO_RETURN void thrFrameParser (void *argument) {
           break;
       }
 		}
-		#if 0
-		if(g_joystick.tilt < 60) {
-			LED_Off(RED);
-			LED_On(GREEN);
-    } else if (g_joystick.tilt > 180) {
-			LED_Off(GREEN);
-			LED_On(RED);
-		} else {
-			LED_Off(RED);
-			LED_Off(GREEN);
-		}
 		
-
-		if(g_joystick.roll < 60) {
-			LED_Off(ORANGE);
-			LED_On(BLUE);
-    } else if (g_joystick.roll > 180) {
-			LED_Off(BLUE);
-			LED_On(ORANGE);
-		} else {
-			LED_Off(BLUE);
-			LED_Off(ORANGE);
-		}
-		#endif
 		if (new_joystick_input) {
 			new_joystick_input = false;
 		  osMutexAcquire(robotStateMutex_id, osWaitForever);
@@ -187,10 +165,15 @@ __NO_RETURN void thrSender (void *argument) {
     FRAME_END
 	};
   for (;;) {
-		osDelay (250);
+		osDelay (20);
 		int16_t accData[3];
+		int16_t gyroData[3];
 		ACC_GetXYZ(accData);
-		Bluetooth_Send(testFrame, sizeof(testFrame));
+		GYRO_GetXYZ(gyroData);
+		g_sensor.acc_y = accData[1];
+		g_sensor.acc_z = accData[2];
+		g_sensor.gyro_x = gyroData[0];
+		//Bluetooth_Send(testFrame, sizeof(testFrame));
 		testFrame[2] = (uint8_t)(accData[0] >> 8 & 0xFF);
 		testFrame[3] = (uint8_t)(accData[0] & 0xFF);
 		testFrame[4] = (uint8_t)(g_wheatley.roll_servo >> 8 & 0xFF);
@@ -241,6 +224,8 @@ void app_main (void *argument) {
 	 LED_Init();
 	 /* Initialize LSM303DLHC accelerometer */
 	 ACC_Init();
+   /* Initialize LSM303DLHC accelerometer */
+	 GYRO_Init();
 	 /* Initialize PWM for roll and tilt servos */
 	 //Servo_Init();
 	 /* Initialize USART and DMA for serial communication via Bluetooth */

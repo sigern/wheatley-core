@@ -49,9 +49,17 @@ typedef struct robotState
     float gain_d;
 } RobotState_t;
 
+typedef struct sensorState
+{
+	int16_t acc_y;
+	int16_t acc_z;
+	int16_t gyro_x;
+} SensorState_t;
+
 // Global variables
 volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0.f, 0.f, 0.f, 0.f, 0.f};
 volatile JoystickState_t g_joystick = {JOYSTICK_ZERO, JOYSTICK_ZERO};
+volatile SensorState_t g_sensor = {0};
 
 volatile uint32_t g_heartbeat_timestamp_ms = 0u;
 
@@ -67,11 +75,19 @@ const osMutexAttr_t joystickStateMutex_attr = {
 };
 
 const osMutexAttr_t robotStateMutex_attr = {
-  "robotStateMutex",// human readable mutex name
-  osMutexPrioInherit,  // attr_bits
-  NULL,                // memory for control block   
-  0U                   // size for control block
+  "robotStateMutex",  // human readable mutex name
+  osMutexPrioInherit, // attr_bits
+  NULL,               // memory for control block   
+  0U                  // size for control block
 };
+
+const osMutexAttr_t sensorStateMutex_attr = {
+  "sensorStateMutex", // human readable mutex name
+  osMutexPrioInherit, // attr_bits
+  NULL,               // memory for control block   
+  0U                  // size for control block
+};
+
 
 
 #endif /* __DEFINES_H */

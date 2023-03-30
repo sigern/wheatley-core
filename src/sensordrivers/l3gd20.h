@@ -61,7 +61,7 @@ typedef struct
   void       (*ClearIT)(uint16_t, uint16_t); 
   void       (*FilterConfig)(uint8_t);  
   void       (*FilterCmd)(uint8_t);  
-  void       (*GetXYZ)(float *);
+  void       (*GetXYZ)(int16_t *);
 }GYRO_DrvTypeDef;
 /**
   * @}
@@ -97,21 +97,50 @@ typedef struct
   uint8_t Interrupt_ActiveEdge;               /* Interrupt Active edge */
 }GYRO_InterruptConfigTypeDef;  
 
-/** @addtogroup BSP
-  * @{
-  */ 
+/*################################# SPI1 #####################################*/
+#define DISCOVERY_SPIx                          SPI1
+#define DISCOVERY_SPIx_CLOCK_ENABLE()           __HAL_RCC_SPI1_CLK_ENABLE()
+#define DISCOVERY_SPIx_GPIO_PORT                GPIOA                      /* GPIOA */
+#define DISCOVERY_SPIx_AF                       GPIO_AF5_SPI1
+#define DISCOVERY_SPIx_GPIO_CLK_ENABLE()        __HAL_RCC_GPIOA_CLK_ENABLE()
+#define DISCOVERY_SPIx_GPIO_CLK_DISABLE()       __HAL_RCC_GPIOA_CLK_DISABLE()
+#define DISCOVERY_SPIx_SCK_PIN                  GPIO_PIN_5                 /* PA.05 */
+#define DISCOVERY_SPIx_MISO_PIN                 GPIO_PIN_6                 /* PA.06 */
+#define DISCOVERY_SPIx_MOSI_PIN                 GPIO_PIN_7                 /* PA.07 */
+/* Maximum Timeout values for flags waiting loops. These timeouts are not based
+   on accurate values, they just guarantee that the application will not remain
+   stuck if the SPI communication is corrupted.
+   You may modify these timeout values depending on CPU frequency and application
+   conditions (interrupts routines ...). */   
+#define SPIx_TIMEOUT_MAX                        ((uint32_t)0x1000)
 
-/** @addtogroup Components
-  * @{
-  */ 
+/*################################ GYROSCOPE #################################*/
+/* Read/Write command */
+#define READWRITE_CMD                           ((uint8_t)0x80) 
+/* Multiple byte read/write command */ 
+#define MULTIPLEBYTE_CMD                        ((uint8_t)0x40)
+/* Dummy Byte Send by the SPI Master device in order to generate the Clock to the Slave device */
+#define DUMMY_BYTE                              ((uint8_t)0x00)
 
-/** @addtogroup L3GD20
-  * @{
+/* Chip Select macro definition */
+#define GYRO_CS_LOW()       HAL_GPIO_WritePin(GYRO_CS_GPIO_PORT, GYRO_CS_PIN, GPIO_PIN_RESET)
+#define GYRO_CS_HIGH()      HAL_GPIO_WritePin(GYRO_CS_GPIO_PORT, GYRO_CS_PIN, GPIO_PIN_SET)
+
+/**
+  * @brief  GYRO SPI Interface pins
   */
-  
-/** @defgroup L3GD20_Exported_Constants
-  * @{
-  */
+#define GYRO_CS_GPIO_PORT                       GPIOE                       /* GPIOE */
+#define GYRO_CS_GPIO_CLK_ENABLE()               __HAL_RCC_GPIOE_CLK_ENABLE()
+#define GYRO_CS_GPIO_CLK_DISABLE()              __HAL_RCC_GPIOE_CLK_DISABLE()
+#define GYRO_CS_PIN                             GPIO_PIN_3                  /* PE.03 */
+
+#define GYRO_INT_GPIO_PORT                      GPIOE                       /* GPIOE */
+#define GYRO_INT_GPIO_CLK_ENABLE()              __HAL_RCC_GPIOE_CLK_ENABLE()
+#define GYRO_INT_GPIO_CLK_DISABLE()             __HAL_RCC_GPIOE_CLK_DISABLE()
+#define GYRO_INT1_PIN                           GPIO_PIN_0                  /* PE.00 */
+#define GYRO_INT1_EXTI_IRQn                     EXTI0_IRQn 
+#define GYRO_INT2_PIN                           GPIO_PIN_1                  /* PE.01 */
+#define GYRO_INT2_EXTI_IRQn                     EXTI1_IRQn 
 
 /******************************************************************************/
 /*************************** START REGISTER MAPPING  **************************/
@@ -337,7 +366,7 @@ void    L3GD20_DisableIT(uint8_t IntSel);
 /* High Pass Filter Configuration Functions */
 void    L3GD20_FilterConfig(uint8_t FilterStruct);
 void    L3GD20_FilterCmd(uint8_t HighPassFilterState);
-void    L3GD20_ReadXYZAngRate(float *pfData);
+void    L3GD20_ReadXYZAngRate(int16_t *pfData);
 uint8_t L3GD20_GetDataStatus(void);
 
 /* Gyroscope IO functions */

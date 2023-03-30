@@ -1,42 +1,8 @@
-/**
-  ******************************************************************************
-  * @file    l3gd20.c
-  * @author  MCD Application Team
-  * @version V2.0.0
-  * @date    26-June-2015
-  * @brief   This file provides a set of functions needed to manage the L3GD20,
-  *          ST MEMS motion sensor, 3-axis digital output gyroscope.  
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; COPYRIGHT(c) 2015 STMicroelectronics</center></h2>
-  *
-  * Redistribution and use in source and binary forms, with or without modification,
-  * are permitted provided that the following conditions are met:
-  *   1. Redistributions of source code must retain the above copyright notice,
-  *      this list of conditions and the following disclaimer.
-  *   2. Redistributions in binary form must reproduce the above copyright notice,
-  *      this list of conditions and the following disclaimer in the documentation
-  *      and/or other materials provided with the distribution.
-  *   3. Neither the name of STMicroelectronics nor the names of its contributors
-  *      may be used to endorse or promote products derived from this software
-  *      without specific prior written permission.
-  *
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-  * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-  * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-  * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-  *
-  ******************************************************************************
-  */
-/* Includes ------------------------------------------------------------------*/
 #include "l3gd20.h"
+#include "stm32f4xx_hal.h"
+
+static SPI_HandleTypeDef SpiHandle;
+uint32_t SpixTimeout = SPIx_TIMEOUT_MAX;    /*<! Value of Timeout when SPI communication fails */
 
 GYRO_DrvTypeDef L3gd20Drv =
 {
@@ -54,6 +20,193 @@ GYRO_DrvTypeDef L3gd20Drv =
   L3GD20_FilterCmd,
   L3GD20_ReadXYZAngRate
 };
+
+/**
+  * @brief  SPI MSP Init.
+  * @param  hspi: SPI handle
+  */
+static void SPIx_MspInit(SPI_HandleTypeDef *hspi)
+{
+  GPIO_InitTypeDef   GPIO_InitStructure;
+  
+  /* Enable SPIx clock  */
+  DISCOVERY_SPIx_CLOCK_ENABLE();
+  
+  /* Enable SPIx GPIO clock */
+  DISCOVERY_SPIx_GPIO_CLK_ENABLE();
+  
+  /* Configure SPIx SCK, MOSI and MISO */
+  GPIO_InitStructure.Pin = (DISCOVERY_SPIx_SCK_PIN | DISCOVERY_SPIx_MOSI_PIN | DISCOVERY_SPIx_MISO_PIN);
+  GPIO_InitStructure.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStructure.Pull  = GPIO_PULLDOWN;
+  GPIO_InitStructure.Speed = GPIO_SPEED_MEDIUM;
+  GPIO_InitStructure.Alternate = DISCOVERY_SPIx_AF;
+  HAL_GPIO_Init(DISCOVERY_SPIx_GPIO_PORT, &GPIO_InitStructure);
+}
+
+/**
+  * @brief  SPIx Bus initialization.
+  */
+static void SPIx_Init(void)
+{
+  if(HAL_SPI_GetState(&SpiHandle) == HAL_SPI_STATE_RESET)
+  {
+    /* SPI Configuration */
+    SpiHandle.Instance = DISCOVERY_SPIx;
+    /* SPI baudrate is set to 5.6 MHz (PCLK2/SPI_BaudRatePrescaler = 90/16 = 5.625 MHz) 
+       to verify these constraints:
+       ILI9341 LCD SPI interface max baudrate is 10MHz for write and 6.66MHz for read
+       L3GD20 SPI interface max baudrate is 10MHz for write/read
+       PCLK2 frequency is set to 90 MHz 
+      */
+    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+    SpiHandle.Init.Direction = SPI_DIRECTION_2LINES;
+    SpiHandle.Init.CLKPhase = SPI_PHASE_1EDGE;
+    SpiHandle.Init.CLKPolarity = SPI_POLARITY_LOW;
+    SpiHandle.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLED;
+    SpiHandle.Init.CRCPolynomial = 7;
+    SpiHandle.Init.DataSize = SPI_DATASIZE_8BIT;
+    SpiHandle.Init.FirstBit = SPI_FIRSTBIT_MSB;
+    SpiHandle.Init.NSS = SPI_NSS_SOFT;
+    SpiHandle.Init.TIMode = SPI_TIMODE_DISABLED;
+    SpiHandle.Init.Mode = SPI_MODE_MASTER;
+    
+    SPIx_MspInit(&SpiHandle);
+    HAL_SPI_Init(&SpiHandle);
+  }
+}
+
+/**
+  * @brief  SPIx error treatment function.
+  */
+static void SPIx_Error (void)
+{
+  /* De-initialize the SPI comunication BUS */
+  HAL_SPI_DeInit(&SpiHandle);
+  
+  /* Re-Initiaize the SPI comunication BUS */
+  SPIx_Init();
+}
+
+/**
+  * @brief  Sends a Byte through the SPI interface and return the Byte received 
+  *         from the SPI bus.
+  * @param  Byte: Byte send.
+  * @retval The received byte value
+  */
+static uint8_t SPIx_WriteRead(uint8_t Byte)
+{
+  uint8_t receivedbyte = 0;
+  
+  /* Send a Byte through the SPI peripheral */
+  /* Read byte from the SPI bus */
+  if(HAL_SPI_TransmitReceive(&SpiHandle, (uint8_t*) &Byte, (uint8_t*) &receivedbyte, 1, SpixTimeout) != HAL_OK)
+  {
+    SPIx_Error();
+  }
+  
+  return receivedbyte;
+}
+
+/**
+  * @brief  Configures the GYRO SPI interface.
+  */
+void GYRO_IO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStructure;
+  
+  /* Configure the Gyroscope Control pins ------------------------------------*/
+  /* Enable CS GPIO clock and  Configure GPIO PIN for Gyroscope Chip select */  
+  GYRO_CS_GPIO_CLK_ENABLE();  
+  GPIO_InitStructure.Pin = GYRO_CS_PIN;
+  GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStructure.Pull  = GPIO_NOPULL;
+  GPIO_InitStructure.Speed = GPIO_SPEED_MEDIUM;
+  HAL_GPIO_Init(GYRO_CS_GPIO_PORT, &GPIO_InitStructure);
+
+  /* Deselect : Chip Select high */
+  GYRO_CS_HIGH();
+
+  /* Enable INT1, INT2 GPIO clock and Configure GPIO PINs to detect Interrupts */
+  GYRO_INT_GPIO_CLK_ENABLE();
+  GPIO_InitStructure.Pin = GYRO_INT1_PIN | GYRO_INT2_PIN;
+  GPIO_InitStructure.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStructure.Speed = GPIO_SPEED_FAST;
+  GPIO_InitStructure.Pull= GPIO_NOPULL;
+  HAL_GPIO_Init(GYRO_INT_GPIO_PORT, &GPIO_InitStructure);
+  
+  SPIx_Init();
+}
+
+/**
+  * @brief  Writes one byte to the GYRO.
+  * @param  pBuffer: pointer to the buffer  containing the data to be written to the GYRO.
+  * @param  WriteAddr : GYRO's internal address to write to.
+  * @param  NumByteToWrite: Number of bytes to write.
+  */
+void GYRO_IO_Write(uint8_t* pBuffer, uint8_t WriteAddr, uint16_t NumByteToWrite)
+{
+  /* Configure the MS bit: 
+     - When 0, the address will remain unchanged in multiple read/write commands.
+     - When 1, the address will be auto incremented in multiple read/write commands.
+  */
+  if(NumByteToWrite > 0x01)
+  {
+    WriteAddr |= (uint8_t)MULTIPLEBYTE_CMD;
+  }
+  /* Set chip select Low at the start of the transmission */
+  GYRO_CS_LOW();
+  
+  /* Send the Address of the indexed register */
+  SPIx_WriteRead(WriteAddr);
+  
+  /* Send the data that will be written into the device (MSB First) */
+  while(NumByteToWrite >= 0x01)
+  {
+    SPIx_WriteRead(*pBuffer);
+    NumByteToWrite--;
+    pBuffer++;
+  }
+  
+  /* Set chip select High at the end of the transmission */ 
+  GYRO_CS_HIGH();
+}
+
+/**
+  * @brief  Reads a block of data from the GYRO.
+  * @param  pBuffer: pointer to the buffer that receives the data read from the GYRO.
+  * @param  ReadAddr: GYRO's internal address to read from.
+  * @param  NumByteToRead: Number of bytes to read from the GYRO.
+  */
+void GYRO_IO_Read(uint8_t* pBuffer, uint8_t ReadAddr, uint16_t NumByteToRead)
+{  
+  if(NumByteToRead > 0x01)
+  {
+    ReadAddr |= (uint8_t)(READWRITE_CMD | MULTIPLEBYTE_CMD);
+  }
+  else
+  {
+    ReadAddr |= (uint8_t)READWRITE_CMD;
+  }
+  
+  /* Set chip select Low at the start of the transmission */
+  GYRO_CS_LOW();
+  
+  /* Send the Address of the indexed register */
+  SPIx_WriteRead(ReadAddr);
+  
+  /* Receive the data that will be read from the device (MSB First) */
+  while(NumByteToRead > 0x00)
+  {
+    /* Send dummy byte (0x00) to generate the SPI clock to GYRO (Slave device) */
+    *pBuffer = SPIx_WriteRead(DUMMY_BYTE);
+    NumByteToRead--;
+    pBuffer++;
+  }
+  
+  /* Set chip select High at the end of the transmission */ 
+  GYRO_CS_HIGH();
+}  
 
 /**
   * @brief  Set L3GD20 Initialization.
@@ -76,8 +229,6 @@ void L3GD20_Init(uint16_t InitStruct)
   ctrl = (uint8_t) (InitStruct >> 8);
   GYRO_IO_Write(&ctrl, L3GD20_CTRL_REG4_ADDR, 1);
 }
-
-
 
 /**
   * @brief L3GD20 De-initialization
@@ -292,7 +443,7 @@ uint8_t L3GD20_GetDataStatus(void)
 * @param  pfData: Data out pointer
 * @retval None
 */
-void L3GD20_ReadXYZAngRate(float *pfData)
+void L3GD20_ReadXYZAngRate(int16_t *pfData)
 {
   uint8_t tmpbuffer[6] ={0};
   int16_t RawData[3] = {0};
@@ -338,24 +489,6 @@ void L3GD20_ReadXYZAngRate(float *pfData)
   /* Divide by sensitivity */
   for(i=0; i<3; i++)
   {
-    pfData[i]=(float)(RawData[i] * sensitivity);
+    pfData[i]=RawData[i];
   }
 }
-
-/**
-  * @}
-  */ 
-
-/**
-  * @}
-  */ 
-
-/**
-  * @}
-  */ 
-
-/**
-  * @}
-  */ 
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/     

@@ -5,8 +5,6 @@
 static ACCELERO_DrvTypeDef *AccelerometerDrv;
 static void ACCELERO_ReadAcc(void);
 
-extern void Error_Handler(uint8_t val);
-
 /**
   * @brief  Set Accelerometer Initialization.
   * @retval ACCELERO_OK if no problem during initialization
@@ -102,20 +100,4 @@ void ACC_GetXYZ(int16_t *pDataXYZ)
       pDataXYZ[1] = -SwitchXY;
     } 
   }
-}
-
-void ACCELERO_MEMS_Test(void)
-{
-  /* Init Accelerometer MEMS */
-  if(ACC_Init() != HAL_OK)
-  {
-    /* Initialization Error */
-    Error_Handler(0); 
-  }
- 
-  int16_t buffer[3] = {0};
-  int16_t xval, yval = 0x00;
-  
-  /* Read Acceleration */
-  ACC_GetXYZ(buffer);
-}  
+} 

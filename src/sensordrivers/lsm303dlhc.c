@@ -2,8 +2,6 @@
 #include "stm32f4xx_hal.h"
 
 static I2C_HandleTypeDef I2cHandle;
-static SPI_HandleTypeDef SpiHandle;
-
 uint32_t I2cxTimeout = I2Cx_TIMEOUT_MAX;    /*<! Value of Timeout when I2C communication fails */
 
 ACCELERO_DrvTypeDef Lsm303dlhcDrv =
