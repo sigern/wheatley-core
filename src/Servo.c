@@ -166,7 +166,7 @@ void Servo_Init(void)
 	}
 	ServoTilt_Set(TILT_ZERO);
 	
-	#if 1
+	
 	/* Roll servo init */
 	TIM5_Init();
 	if (HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_3) != HAL_OK) {
@@ -174,7 +174,6 @@ void Servo_Init(void)
 	  Error_Handler(1);
   }
 	ServoRoll_Set(ROLL_ZERO);
-	#endif
 }
 
 void Servo_Enable(bool isEnable)

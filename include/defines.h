@@ -18,7 +18,8 @@ enum EFrame {
     FRAME_TYPE_SERVO = 0xF3,
     FRAME_TYPE_LIPOL = 0xF4,
     FRAME_TYPE_VELOCITY = 0xF5,
-    FRAME_TYPE_SERVO_ENABLED = 0xF6
+    FRAME_TYPE_SERVO_ENABLED = 0xF6,
+	  FRAME_TYPE_HEARTBEAT = 0xF7
 };
 
 enum EReceiverState {
@@ -51,6 +52,8 @@ typedef struct robotState
 // Global variables
 volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0.f, 0.f, 0.f, 0.f, 0.f};
 volatile JoystickState_t g_joystick = {JOYSTICK_ZERO, JOYSTICK_ZERO};
+
+volatile uint32_t g_heartbeat_timestamp_ms = 0u;
 
 // Mutexes for global variables
 osMutexId_t joystickStateMutex_id;  

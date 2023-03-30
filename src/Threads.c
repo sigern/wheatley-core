@@ -66,6 +66,7 @@ __NO_RETURN void thrFrameParser (void *argument) {
 	uint8_t roll_cache = JOYSTICK_ZERO;
 	uint8_t crc_cache = 0u;
 	
+	bool new_joystick_input = false;
 	osStatus_t status;
 	
   for (;;) {
@@ -84,7 +85,10 @@ __NO_RETURN void thrFrameParser (void *argument) {
 					} else if (msg == FRAME_TYPE_SERVO_ENABLED) {
 						sm_state = SERVO_ENABLED;
 						current_frame = FRAME_TYPE_SERVO_ENABLED;
-          } else {
+          }	else if (msg == FRAME_TYPE_HEARTBEAT) {
+						sm_state = CHECK_END;
+						current_frame = FRAME_TYPE_HEARTBEAT;
+          }else {
             sm_state = NONE;
 						current_frame = NONE;
           }
@@ -116,9 +120,12 @@ __NO_RETURN void thrFrameParser (void *argument) {
 						if (current_frame == FRAME_TYPE_JOYSTICK) {
 							g_joystick.tilt = tilt_cache;
 						  g_joystick.roll = roll_cache;
+							new_joystick_input = true;
 						} else if (current_frame == FRAME_TYPE_SERVO_ENABLED) {
 							Servo_Enable(servo_enabled_cache);
-						}							
+						}	else if (current_frame == FRAME_TYPE_HEARTBEAT) {
+							g_heartbeat_timestamp_ms = HAL_GetTick();
+						}								
           }
           sm_state = NONE;
 					current_frame = NONE;
@@ -153,10 +160,13 @@ __NO_RETURN void thrFrameParser (void *argument) {
 			LED_Off(ORANGE);
 		}
 		#endif
-		osMutexAcquire(robotStateMutex_id, osWaitForever);
-		g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)g_joystick.roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
-		g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
-		osMutexRelease(robotStateMutex_id);
+		if (new_joystick_input) {
+			new_joystick_input = false;
+		  osMutexAcquire(robotStateMutex_id, osWaitForever);
+		  g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)g_joystick.roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
+		  g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
+		  osMutexRelease(robotStateMutex_id);
+		}
 	}
 }
 
@@ -194,11 +204,17 @@ __NO_RETURN void thrController (void *argument) {
   for (;;) {
 		osDelay (20);
 		
-		osMutexAcquire(robotStateMutex_id, osWaitForever);
-		roll = g_wheatley.roll_servo;
-		tilt = g_wheatley.tilt_servo;
-		osMutexRelease(robotStateMutex_id);
-		
+		/* Check if last heartbeat is less than 2000 ms old, otherwise reset servos */
+		if (HAL_GetTick() - g_heartbeat_timestamp_ms < 2000u) {
+			osMutexAcquire(robotStateMutex_id, osWaitForever);
+			roll = g_wheatley.roll_servo;
+		  tilt = g_wheatley.tilt_servo;
+		  osMutexRelease(robotStateMutex_id);
+		} else {
+			roll = ROLL_ZERO;
+			tilt = TILT_ZERO;
+		}
+
 		if (roll >= ROLL_BACK_LIMIT && roll <= ROLL_FORWARD_LIMIT) {
 			ServoRoll_Set(roll);
 		}
@@ -221,7 +237,7 @@ void app_main (void *argument) {
 	 /* Initialize Board LEDs */
 	 LED_Init();
 	 /* Initialize PWM for roll and tilt servos */
-	 Servo_Init();
+	 //Servo_Init();
 	 /* Initialize USART and DMA for serial communication via Bluetooth */
 	 Bluetooth_Init();
 	
