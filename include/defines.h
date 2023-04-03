@@ -11,55 +11,50 @@
 #define JOYSTICK_ZERO 120
 #define JOYSTICK_MAX  240
 
+/* Complementary filter defines */
+#define CP_TIMESTEP_SEC (float32_t)0.02f
+#define CP_EPS          (float32_t)0.08f	
+
 enum EFrame {
-    FRAME_START = 0xF0,
-    FRAME_END   = 0xF1,
-    FRAME_TYPE_JOYSTICK = 0xF2,
-    FRAME_TYPE_SERVO = 0xF3,
-    FRAME_TYPE_LIPOL = 0xF4,
-    FRAME_TYPE_VELOCITY = 0xF5,
-    FRAME_TYPE_SERVO_ENABLED = 0xF6,
-	  FRAME_TYPE_HEARTBEAT = 0xF7
+	FRAME_START = 0xF0,
+	FRAME_END   = 0xF1,
+	FRAME_TYPE_JOYSTICK = 0xF2,
+	FRAME_TYPE_SERVO = 0xF3,
+	FRAME_TYPE_LIPOL = 0xF4,
+	FRAME_TYPE_VELOCITY = 0xF5,
+	FRAME_TYPE_SERVO_ENABLED = 0xF6,
+	FRAME_TYPE_HEARTBEAT = 0xF7
 };
 
 enum EReceiverState {
-    NONE,
-    CHECK_TYPE,
-	  CHECK_END,
-    JOYSTICK_TILT,
-	  JOYSTICK_ROLL,
-	  JOYSTICK_CRC,
-	  SERVO_ENABLED
+	NONE,
+	CHECK_TYPE,
+	CHECK_END,
+	JOYSTICK_TILT,
+	JOYSTICK_ROLL,
+	JOYSTICK_CRC,
+	SERVO_ENABLED
 };
 
 typedef struct joystickState
 {
-    uint8_t tilt;
-    uint8_t roll;
+	uint8_t tilt;
+	uint8_t roll;
 } JoystickState_t;
 
 typedef struct robotState
 {
-    uint16_t tilt_servo;
-    uint16_t roll_servo;
-    float velocity;
-    float lipol_vol;
-    float gain_p;
-    float gain_i;
-    float gain_d;
+	uint16_t tilt_servo;
+	uint16_t roll_servo;
+	float tilt_angle;
+	float roll_angle;
+	float velocity;
+	float lipol_vol;
 } RobotState_t;
 
-typedef struct sensorState
-{
-	int16_t acc_y;
-	int16_t acc_z;
-	int16_t gyro_x;
-} SensorState_t;
-
 // Global variables
-volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0.f, 0.f, 0.f, 0.f, 0.f};
+volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0.f, 0.f, 0.f, 0.f};
 volatile JoystickState_t g_joystick = {JOYSTICK_ZERO, JOYSTICK_ZERO};
-volatile SensorState_t g_sensor = {0};
 
 volatile uint32_t g_heartbeat_timestamp_ms = 0u;
 

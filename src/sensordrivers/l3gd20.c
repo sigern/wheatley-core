@@ -443,7 +443,7 @@ uint8_t L3GD20_GetDataStatus(void)
 * @param  pfData: Data out pointer
 * @retval None
 */
-void L3GD20_ReadXYZAngRate(int16_t *pfData)
+void L3GD20_ReadXYZAngRate(float *pfData)
 {
   uint8_t tmpbuffer[6] ={0};
   int16_t RawData[3] = {0};
@@ -489,6 +489,6 @@ void L3GD20_ReadXYZAngRate(int16_t *pfData)
   /* Divide by sensitivity */
   for(i=0; i<3; i++)
   {
-    pfData[i]=RawData[i];
+    pfData[i]=(float)(RawData[i] * sensitivity);
   }
 }

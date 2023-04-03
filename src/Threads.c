@@ -1,5 +1,6 @@
 #include "cmsis_os2.h"                  // ARM::CMSIS:RTOS:Keil RTX5
 #include "stm32f4xx_hal.h"
+#include "arm_math.h"  
 
 #include "../include/LED.h"
 #include "../include/Accelerometer.h"
@@ -17,6 +18,15 @@ static osThreadId_t tid_thrController;           // Thread id of thread: Control
 extern UART_HandleTypeDef huart6;
 extern uint8_t UART6_rxBuffer;
 extern osMessageQueueId_t UartRxMsgQueueId;  // message queue id
+
+float32_t g_tiltAngle = 0.f;
+float32_t g_rollAngle = 0.f;
+float32_t g_gyroX = 0.f;
+float32_t g_gyroY = 0.f;
+float32_t g_gyroZ = 0.f;
+int16_t g_accX = 0.f;
+int16_t g_accY = 0.f;
+int16_t g_accZ = 0.f;
 
 
 /**
@@ -165,30 +175,50 @@ __NO_RETURN void thrSender (void *argument) {
     FRAME_END
 	};
   for (;;) {
-		osDelay (20);
-		int16_t accData[3];
-		int16_t gyroData[3];
-		ACC_GetXYZ(accData);
-		GYRO_GetXYZ(gyroData);
-		g_sensor.acc_y = accData[1];
-		g_sensor.acc_z = accData[2];
-		g_sensor.gyro_x = gyroData[0];
-		//Bluetooth_Send(testFrame, sizeof(testFrame));
-		testFrame[2] = (uint8_t)(accData[0] >> 8 & 0xFF);
-		testFrame[3] = (uint8_t)(accData[0] & 0xFF);
+		osDelay (250);
+		Bluetooth_Send(testFrame, sizeof(testFrame));
+		testFrame[2] = (uint8_t)(g_wheatley.tilt_servo >> 8 & 0xFF);
+		testFrame[3] = (uint8_t)(g_wheatley.tilt_servo & 0xFF);
 		testFrame[4] = (uint8_t)(g_wheatley.roll_servo >> 8 & 0xFF);
 		testFrame[5] = (uint8_t)(g_wheatley.roll_servo & 0xFF);
   }
 }
 
+float32_t calcComplementaryFilter(float32_t prev_angle, int16_t acc_1, int16_t acc_2, float gyro)
+{
+	float32_t atan = 0.f;
+	float32_t acc_tilt_angle = 0.f;
+	
+	arm_atan2_f32((float32_t)acc_1, (float32_t)acc_2, &atan);
+	acc_tilt_angle = 180.f * atan / PI;
+	
+	return (1.0 - CP_EPS)*(prev_angle - CP_TIMESTEP_SEC * gyro) + CP_EPS * acc_tilt_angle;
+}
+
 /*------------------------------------------------------------------------------
-  thrSender: Send frame via UART
+  thrSender: Control algorithm loop
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrController (void *argument) {
 	uint16_t roll = ROLL_ZERO;
 	uint16_t tilt = TILT_ZERO;
+	
+	int16_t accData[3];
+	float gyroData[3];
+	float32_t prev_tilt_angle = 0.f;
+	float32_t tilt_angle = 0.f;
+	float32_t prev_roll_angle = 0.f;
+	float32_t roll_angle = 0.f;
+	
   for (;;) {
 		osDelay (20);
+		ACC_GetXYZ(accData);
+		GYRO_GetXYZ(gyroData);
+	  g_tiltAngle = calcComplementaryFilter(prev_tilt_angle, accData[0], accData[2], gyroData[0]);
+		prev_tilt_angle = g_tiltAngle;
+		
+		g_rollAngle = calcComplementaryFilter(prev_roll_angle, accData[1], accData[2], gyroData[1]);
+		prev_roll_angle = g_rollAngle;
+		
 		
 		/* Check if last heartbeat is less than 2000 ms old, otherwise reset servos */
 		if (HAL_GetTick() - g_heartbeat_timestamp_ms < 2000u) {

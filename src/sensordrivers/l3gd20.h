@@ -61,7 +61,7 @@ typedef struct
   void       (*ClearIT)(uint16_t, uint16_t); 
   void       (*FilterConfig)(uint8_t);  
   void       (*FilterCmd)(uint8_t);  
-  void       (*GetXYZ)(int16_t *);
+  void       (*GetXYZ)(float *);
 }GYRO_DrvTypeDef;
 /**
   * @}
@@ -237,9 +237,9 @@ typedef struct
 /** @defgroup Full_Scale_Sensitivity 
   * @{
   */
-#define L3GD20_SENSITIVITY_250DPS  ((float)8.75f)         /*!< gyroscope sensitivity with 250 dps full scale [DPS/LSB]  */
-#define L3GD20_SENSITIVITY_500DPS  ((float)17.50f)        /*!< gyroscope sensitivity with 500 dps full scale [DPS/LSB]  */
-#define L3GD20_SENSITIVITY_2000DPS ((float)70.00f)        /*!< gyroscope sensitivity with 2000 dps full scale [DPS/LSB] */
+#define L3GD20_SENSITIVITY_250DPS  ((float)0.00875f)         /*!< gyroscope sensitivity with 250 dps full scale [DPS/LSB]  */
+#define L3GD20_SENSITIVITY_500DPS  ((float)0.0175f)        /*!< gyroscope sensitivity with 500 dps full scale [DPS/LSB]  */
+#define L3GD20_SENSITIVITY_2000DPS ((float)0.07f)        /*!< gyroscope sensitivity with 2000 dps full scale [DPS/LSB] */
 /**
   * @}
   */
@@ -366,7 +366,7 @@ void    L3GD20_DisableIT(uint8_t IntSel);
 /* High Pass Filter Configuration Functions */
 void    L3GD20_FilterConfig(uint8_t FilterStruct);
 void    L3GD20_FilterCmd(uint8_t HighPassFilterState);
-void    L3GD20_ReadXYZAngRate(int16_t *pfData);
+void    L3GD20_ReadXYZAngRate(float *pfData);
 uint8_t L3GD20_GetDataStatus(void);
 
 /* Gyroscope IO functions */

@@ -16,6 +16,6 @@ void    GYRO_Reset(void);
 uint8_t GYRO_ReadID(void);
 void    GYRO_EnableIT(uint8_t IntPin);
 void    GYRO_DisableIT(uint8_t IntPin);
-void    GYRO_GetXYZ(int16_t *pfData);
+void    GYRO_GetXYZ(float *pfData);
 
 #endif /* __GYROSCOPE_H */
