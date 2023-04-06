@@ -12,14 +12,28 @@
 #define JOYSTICK_MAX  240
 
 /* Complementary filter defines */
-#define CP_TIMESTEP_SEC (float32_t)0.02f
-#define CP_EPS          (float32_t)0.08f	
+#define CF_TIMESTEP_SEC 0.02f
+#define CF_EPS          0.08f
+
+/* Setpoint conversion defines */
+#define SP_P1 0.00000538f
+#define SP_P2 0.00002117f
+#define SP_P3 0.01741717f
+
+/* PID defines */
+#define C_KP   0.7f//1.0f //0.751
+#define C_KI   -0.2f//-0.8f //-0.5f
+#define C_KD   -0.2f//-0.11f//-0.125f
+#define	C_TD   0.1f//0.1f
+#define C_TP   0.014f
+#define C_TRES 0.0f
+#define C_TF   0.14f
 
 enum EFrame {
 	FRAME_START = 0xF0,
 	FRAME_END   = 0xF1,
 	FRAME_TYPE_JOYSTICK = 0xF2,
-	FRAME_TYPE_SERVO = 0xF3,
+	FRAME_TYPE_ROBOT_STATE = 0xF3,
 	FRAME_TYPE_LIPOL = 0xF4,
 	FRAME_TYPE_VELOCITY = 0xF5,
 	FRAME_TYPE_SERVO_ENABLED = 0xF6,
@@ -46,14 +60,14 @@ typedef struct robotState
 {
 	uint16_t tilt_servo;
 	uint16_t roll_servo;
-	float tilt_angle;
-	float roll_angle;
-	float velocity;
-	float lipol_vol;
+	int16_t tilt_angle;
+	int16_t roll_angle;
+	int16_t velocity;
+	uint16_t lipol_vol;
 } RobotState_t;
 
 // Global variables
-volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0.f, 0.f, 0.f, 0.f};
+volatile RobotState_t g_wheatley = {TILT_ZERO, ROLL_ZERO, 0, 0, 0, 0u};
 volatile JoystickState_t g_joystick = {JOYSTICK_ZERO, JOYSTICK_ZERO};
 
 volatile uint32_t g_heartbeat_timestamp_ms = 0u;

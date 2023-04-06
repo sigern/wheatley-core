@@ -78,7 +78,6 @@ __NO_RETURN void thrFrameParser (void *argument) {
 	uint8_t roll_cache = JOYSTICK_ZERO;
 	uint8_t crc_cache = 0u;
 	
-	bool new_joystick_input = false;
 	osStatus_t status;
 	
   for (;;) {
@@ -130,9 +129,10 @@ __NO_RETURN void thrFrameParser (void *argument) {
 				case CHECK_END:
 					if (msg == FRAME_END) {
 						if (current_frame == FRAME_TYPE_JOYSTICK) {
+							osMutexAcquire(joystickStateMutex_id, osWaitForever);
 							g_joystick.tilt = tilt_cache;
 						  g_joystick.roll = roll_cache;
-							new_joystick_input = true;
+							osMutexRelease(joystickStateMutex_id);
 						} else if (current_frame == FRAME_TYPE_SERVO_ENABLED) {
 							Servo_Enable(servo_enabled_cache);
 						}	else if (current_frame == FRAME_TYPE_HEARTBEAT) {
@@ -148,14 +148,6 @@ __NO_RETURN void thrFrameParser (void *argument) {
           break;
       }
 		}
-		
-		if (new_joystick_input) {
-			new_joystick_input = false;
-		  osMutexAcquire(robotStateMutex_id, osWaitForever);
-		  g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)g_joystick.roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
-		  g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
-		  osMutexRelease(robotStateMutex_id);
-		}
 	}
 }
 
@@ -163,24 +155,15 @@ __NO_RETURN void thrFrameParser (void *argument) {
   thrSender: Send frame via UART
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrSender (void *argument) {
-	uint16_t testTilt = 0;
-	uint16_t testRoll = 0;
-	uint8_t testFrame[] = {
-    FRAME_START, 
-	  FRAME_TYPE_SERVO, 
-	  (uint8_t)(testTilt & 0xFF),
-	  (uint8_t)(testTilt >> 8 & 0xFF), 
-	  (uint8_t)(testRoll & 0xFF), 
-	  (uint8_t)(testRoll >> 8	& 0xFF),
-    FRAME_END
-	};
+	uint8_t robotStateFrame[15];
+	robotStateFrame[0] = FRAME_START;
+	robotStateFrame[1] = FRAME_TYPE_ROBOT_STATE;
+	robotStateFrame[14] = FRAME_END;
   for (;;) {
-		osDelay (250);
-		Bluetooth_Send(testFrame, sizeof(testFrame));
-		testFrame[2] = (uint8_t)(g_wheatley.tilt_servo >> 8 & 0xFF);
-		testFrame[3] = (uint8_t)(g_wheatley.tilt_servo & 0xFF);
-		testFrame[4] = (uint8_t)(g_wheatley.roll_servo >> 8 & 0xFF);
-		testFrame[5] = (uint8_t)(g_wheatley.roll_servo & 0xFF);
+		osDelay (150);
+		memcpy(&robotStateFrame[2], (uint8_t*)&g_wheatley, 12);
+		Bluetooth_Send(robotStateFrame, sizeof(robotStateFrame));
+
   }
 }
 
@@ -192,44 +175,73 @@ float32_t calcComplementaryFilter(float32_t prev_angle, int16_t acc_1, int16_t a
 	arm_atan2_f32((float32_t)acc_1, (float32_t)acc_2, &atan);
 	acc_tilt_angle = 180.f * atan / PI;
 	
-	return (1.0 - CP_EPS)*(prev_angle - CP_TIMESTEP_SEC * gyro) + CP_EPS * acc_tilt_angle;
+	return (1.0 - CF_EPS)*(prev_angle - CF_TIMESTEP_SEC * gyro) + CF_EPS * acc_tilt_angle;
 }
 
 /*------------------------------------------------------------------------------
   thrSender: Control algorithm loop
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrController (void *argument) {
-	uint16_t roll = ROLL_ZERO;
-	uint16_t tilt = TILT_ZERO;
+	uint16_t sp_roll_joystick = JOYSTICK_ZERO;
+	uint16_t sp_tilt_joystick = JOYSTICK_ZERO;
+	float32_t sp_tilt_servo_input = 0.f;
+	float32_t sp_tilt_sphere_angle = 0.f;
 	
 	int16_t accData[3];
 	float gyroData[3];
+	
 	float32_t prev_tilt_angle = 0.f;
-	float32_t tilt_angle = 0.f;
+	float32_t tilt_sphere_angle = 0.f;
 	float32_t prev_roll_angle = 0.f;
-	float32_t roll_angle = 0.f;
+	float32_t roll_sphere_angle = 0.f;
+	
+	uint16_t output_roll = ROLL_ZERO;
+	uint16_t output_tilt = TILT_ZERO;
 	
   for (;;) {
 		osDelay (20);
+		
+		/* Get ACC and GYRO sensors data */
 		ACC_GetXYZ(accData);
 		GYRO_GetXYZ(gyroData);
-	  g_tiltAngle = calcComplementaryFilter(prev_tilt_angle, accData[0], accData[2], gyroData[0]);
-		prev_tilt_angle = g_tiltAngle;
 		
-		g_rollAngle = calcComplementaryFilter(prev_roll_angle, accData[1], accData[2], gyroData[1]);
-		prev_roll_angle = g_rollAngle;
+		/* Calculate complementary filter for tilt and row angles */
+	  tilt_sphere_angle = calcComplementaryFilter(prev_tilt_angle, accData[0], accData[2], gyroData[0]);
+		g_wheatley.tilt_angle = (int16_t)(tilt_sphere_angle * 10);
+		prev_tilt_angle = tilt_sphere_angle;
 		
+		roll_sphere_angle = calcComplementaryFilter(prev_roll_angle, accData[1], accData[2], gyroData[1]);
+		g_wheatley.roll_angle = (int16_t)(roll_sphere_angle * 10);
+		prev_roll_angle = roll_sphere_angle;
 		
-		/* Check if last heartbeat is less than 2000 ms old, otherwise reset servos */
+		/* Check if last heartbeat is less than 2000 ms old, otherwise reset servos setpoint */
 		if (HAL_GetTick() - g_heartbeat_timestamp_ms < 2000u) {
-			osMutexAcquire(robotStateMutex_id, osWaitForever);
-			roll = g_wheatley.roll_servo;
-		  tilt = g_wheatley.tilt_servo;
-		  osMutexRelease(robotStateMutex_id);
+			osMutexAcquire(joystickStateMutex_id, osWaitForever);
+			sp_roll_joystick = g_joystick.roll;
+		  sp_tilt_joystick = g_joystick.tilt;
+		  osMutexRelease(joystickStateMutex_id);
+			
+			/* Convert joystick setpoint (0-240) to servo angle setpoint (-40 to 40) */
+			sp_tilt_sphere_angle = (float32_t)(sp_tilt_joystick - JOYSTICK_ZERO) / 3.f;
+			sp_tilt_servo_input = 
+		  SP_P1 * sp_tilt_sphere_angle * sp_tilt_sphere_angle * sp_tilt_sphere_angle + 
+		  SP_P2 * sp_tilt_sphere_angle * sp_tilt_sphere_angle + 
+		  SP_P3 * sp_tilt_sphere_angle;
+			
+			
 		} else {
-			roll = ROLL_ZERO;
-			tilt = TILT_ZERO;
+			sp_roll_joystick = JOYSTICK_ZERO;
+			sp_tilt_joystick = JOYSTICK_ZERO;
 		}
+		
+
+		 
+		
+
+		osMutexAcquire(robotStateMutex_id, osWaitForever);
+		g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)output_roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
+		g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
+		osMutexRelease(robotStateMutex_id);
 
 		if (roll >= ROLL_BACK_LIMIT && roll <= ROLL_FORWARD_LIMIT) {
 			ServoRoll_Set(roll);
