@@ -134,7 +134,8 @@ __NO_RETURN void thrFrameParser (void *argument) {
 						  g_joystick.roll = roll_cache;
 							osMutexRelease(joystickStateMutex_id);
 						} else if (current_frame == FRAME_TYPE_SERVO_ENABLED) {
-							Servo_Enable(servo_enabled_cache);
+							//Servo_Enable(servo_enabled_cache);
+							tilt_pid_enable = (bool)servo_enabled_cache;
 						}	else if (current_frame == FRAME_TYPE_HEARTBEAT) {
 							g_heartbeat_timestamp_ms = HAL_GetTick();
 						}								
@@ -182,19 +183,35 @@ float32_t calcComplementaryFilter(float32_t prev_angle, int16_t acc_1, int16_t a
   thrSender: Control algorithm loop
  *----------------------------------------------------------------------------*/
 __NO_RETURN void thrController (void *argument) {
-	uint16_t sp_roll_joystick = JOYSTICK_ZERO;
-	uint16_t sp_tilt_joystick = JOYSTICK_ZERO;
-	float32_t sp_tilt_servo_input = 0.f;
-	float32_t sp_tilt_sphere_angle = 0.f;
+	static const float32_t s_E1 = (KP*TD) + KD;
+  static const float32_t s_E2 = (KI*TPT*TD) + KP*(TPT - 2*TD) - 2*KD;
+  static const float32_t s_E3 = (TPT-TD)*(KI*TPT - KP) + KD;
+  static const float32_t s_U1 = 2*TD - TPT;
+  static const float32_t s_U2 = TPT - TD;
 	
 	int16_t accData[3];
 	float gyroData[3];
 	
-	float32_t prev_tilt_angle = 0.f;
-	float32_t tilt_sphere_angle = 0.f;
-	float32_t prev_roll_angle = 0.f;
-	float32_t roll_sphere_angle = 0.f;
+	uint16_t sp_roll_joystick = JOYSTICK_ZERO;
+	uint16_t sp_tilt_joystick = JOYSTICK_ZERO;
+	float32_t sp_tilt_servo_angle = 0.f;
+	float32_t sp_tilt_sphere_angle = 0.f;
 	
+	float32_t prev_tilt_sphere_angle = 0.f;
+	float32_t prev_roll_sphere_angle = 0.f;
+	float32_t roll_sphere_angle = 0.f;
+	float32_t tilt_sphere_angle = 0.f;
+	
+	float32_t error_tilt = 0.f;
+	float32_t prev_error_tilt = 0.f;
+	float32_t prev2_error_tilt = 0.f;
+
+	float32_t control_end_roll = JOYSTICK_ZERO;
+	float32_t control_end_tilt = 0.f;
+	float32_t control_tilt = 0.f;
+	float32_t prev_control_tilt = 0.f;
+	float32_t prev2_control_tilt = 0.f;
+
 	uint16_t output_roll = ROLL_ZERO;
 	uint16_t output_tilt = TILT_ZERO;
 	
@@ -206,13 +223,13 @@ __NO_RETURN void thrController (void *argument) {
 		GYRO_GetXYZ(gyroData);
 		
 		/* Calculate complementary filter for tilt and row angles */
-	  tilt_sphere_angle = calcComplementaryFilter(prev_tilt_angle, accData[0], accData[2], gyroData[0]);
+	  tilt_sphere_angle = calcComplementaryFilter(prev_tilt_sphere_angle, accData[0], accData[2], gyroData[0]);
 		g_wheatley.tilt_angle = (int16_t)(tilt_sphere_angle * 10);
-		prev_tilt_angle = tilt_sphere_angle;
+		prev_tilt_sphere_angle = tilt_sphere_angle;
 		
-		roll_sphere_angle = calcComplementaryFilter(prev_roll_angle, accData[1], accData[2], gyroData[1]);
+		roll_sphere_angle = calcComplementaryFilter(prev_roll_sphere_angle, accData[1], accData[2], gyroData[1]);
 		g_wheatley.roll_angle = (int16_t)(roll_sphere_angle * 10);
-		prev_roll_angle = roll_sphere_angle;
+		prev_roll_sphere_angle = roll_sphere_angle;
 		
 		/* Check if last heartbeat is less than 2000 ms old, otherwise reset servos setpoint */
 		if (HAL_GetTick() - g_heartbeat_timestamp_ms < 2000u) {
@@ -220,34 +237,66 @@ __NO_RETURN void thrController (void *argument) {
 			sp_roll_joystick = g_joystick.roll;
 		  sp_tilt_joystick = g_joystick.tilt;
 		  osMutexRelease(joystickStateMutex_id);
-			
-			/* Convert joystick setpoint (0-240) to servo angle setpoint (-40 to 40) */
-			sp_tilt_sphere_angle = (float32_t)(sp_tilt_joystick - JOYSTICK_ZERO) / 3.f;
-			sp_tilt_servo_input = 
-		  SP_P1 * sp_tilt_sphere_angle * sp_tilt_sphere_angle * sp_tilt_sphere_angle + 
-		  SP_P2 * sp_tilt_sphere_angle * sp_tilt_sphere_angle + 
-		  SP_P3 * sp_tilt_sphere_angle;
-			
-			
 		} else {
 			sp_roll_joystick = JOYSTICK_ZERO;
 			sp_tilt_joystick = JOYSTICK_ZERO;
 		}
 		
-
-		 
+		/* Convert joystick tilt setpoint (0-240) to servo tilt angle setpoint (-60 to 60) */
+		sp_tilt_servo_angle = (float32_t)(sp_tilt_joystick - JOYSTICK_ZERO) / 2.f;
+		sp_tilt_sphere_angle = 
+		P1 * sp_tilt_servo_angle * sp_tilt_servo_angle * sp_tilt_servo_angle + 
+		P2 * sp_tilt_servo_angle * sp_tilt_servo_angle + 
+		P3 * sp_tilt_servo_angle;
 		
+		/* PID algorithm for tilt */
+		error_tilt = sp_tilt_sphere_angle - tilt_sphere_angle;
+		control_tilt = 
+		  (error_tilt * s_E1 + 
+			prev_error_tilt * s_E2 +
+  		prev2_error_tilt * s_E3 + 
+		  prev_control_tilt * s_U1 + 
+		  prev2_control_tilt * s_U2) / TD;
+		
+		/* Control saturation */
+		if (control_tilt > 100.f) {
+			control_tilt = 100.f;
+		} else if (control_tilt < -100.f) {
+			control_tilt = -100.f;
+		}
+		
+		/* Previous values */
+		prev2_control_tilt = prev_control_tilt;
+	  prev_control_tilt = control_tilt;
+		prev2_error_tilt = prev_error_tilt;
+		prev_error_tilt = error_tilt;
 
+		control_end_tilt = tilt_pid_enable ? sp_tilt_servo_angle - control_tilt : sp_tilt_servo_angle;
+		
+		/* Control end saturation */
+		if (control_end_tilt > 60.f) {
+			control_end_tilt = 60.f;
+		} else if (control_end_tilt < -60.f) {
+			control_end_tilt = -60.f;
+		}
+		
+		output_tilt = TILT_ZERO + (int16_t)((control_end_tilt*2.f / (float)JOYSTICK_ZERO) * TILT_DELTA);
+		
+		/* Roll has no PID, only inertion */
+		control_end_roll = control_end_roll*TF/(TF+TPR) + sp_roll_joystick*TPR/(TF+TPR);
+		output_roll = ROLL_ZERO + (int16_t)((((float)control_end_roll - (float)JOYSTICK_ZERO) / (float)JOYSTICK_ZERO) * ROLL_DELTA);
+
+		/* fill global struct */
 		osMutexAcquire(robotStateMutex_id, osWaitForever);
-		g_wheatley.roll_servo = ROLL_BACK_LIMIT + (uint16_t)((float)output_roll / (float)JOYSTICK_ZERO * (float)ROLL_DELTA);
-		g_wheatley.tilt_servo = TILT_LEFT_LIMIT + (uint16_t)((float)g_joystick.tilt / (float)JOYSTICK_ZERO * (float)TILT_DELTA);
+		g_wheatley.roll_servo = output_roll;
+		g_wheatley.tilt_servo = output_tilt;
 		osMutexRelease(robotStateMutex_id);
 
-		if (roll >= ROLL_BACK_LIMIT && roll <= ROLL_FORWARD_LIMIT) {
-			ServoRoll_Set(roll);
+		if (output_roll >= ROLL_FORWARD_LIMIT && output_roll <= ROLL_BACK_LIMIT) {
+			ServoRoll_Set(output_roll);
 		}
-		if (tilt <= TILT_RIGHT_LIMIT && tilt >= TILT_LEFT_LIMIT) {
-			ServoTilt_Set(tilt);
+		if (output_tilt <= TILT_RIGHT_LIMIT && output_tilt >= TILT_LEFT_LIMIT) {
+			ServoTilt_Set(output_tilt);
 		}
   }
 }
@@ -269,7 +318,7 @@ void app_main (void *argument) {
    /* Initialize LSM303DLHC accelerometer */
 	 GYRO_Init();
 	 /* Initialize PWM for roll and tilt servos */
-	 //Servo_Init();
+	 Servo_Init();
 	 /* Initialize USART and DMA for serial communication via Bluetooth */
 	 Bluetooth_Init();
 	
