@@ -7,7 +7,7 @@
 #define ROLL_FORWARD_LIMIT    36935 // ROLL_ZERO - 165
 #define ROLL_ZERO             37110
 #define ROLL_BACK_LIMIT       37275 // ROLL_ZERO + 165
-#define ROLL_DELTA            70
+#define ROLL_DELTA            165
 
 #define TILT_LEFT_LIMIT       6590 // TILT_ZERO - 4040
 #define TILT_ZERO             10630
