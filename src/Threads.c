@@ -196,6 +196,7 @@ __NO_RETURN void thrController (void *argument) {
 	uint16_t sp_tilt_joystick = JOYSTICK_ZERO;
 	float32_t sp_tilt_servo_angle = 0.f;
 	float32_t sp_tilt_sphere_angle = 0.f;
+	float32_t sp_tilt_servo_angle_inertial = 0.f;
 	
 	float32_t prev_tilt_sphere_angle = 0.f;
 	float32_t prev_roll_sphere_angle = 0.f;
@@ -237,55 +238,59 @@ __NO_RETURN void thrController (void *argument) {
 			sp_roll_joystick = g_joystick.roll;
 		  sp_tilt_joystick = g_joystick.tilt;
 		  osMutexRelease(joystickStateMutex_id);
+			
+			/* Convert joystick tilt setpoint (0-240) to servo tilt angle setpoint (-60 to 60) */
+			sp_tilt_servo_angle = (float32_t)(sp_tilt_joystick - JOYSTICK_ZERO) / 2.f;
+			sp_tilt_servo_angle_inertial = sp_tilt_servo_angle_inertial*TF_T/(TF_T+TPR_T) + sp_tilt_servo_angle*TPR_T/(TF_T+TPR_T);
+			sp_tilt_sphere_angle = 
+			P1 * sp_tilt_servo_angle_inertial * sp_tilt_servo_angle_inertial * sp_tilt_servo_angle_inertial + 
+			P2 * sp_tilt_servo_angle_inertial * sp_tilt_servo_angle_inertial + 
+			P3 * sp_tilt_servo_angle_inertial;
+			
+			/* PID algorithm for tilt */
+			error_tilt = sp_tilt_sphere_angle - tilt_sphere_angle;
+			control_tilt = 
+				(error_tilt * s_E1 + 
+				prev_error_tilt * s_E2 +
+				prev2_error_tilt * s_E3 + 
+				prev_control_tilt * s_U1 + 
+				prev2_control_tilt * s_U2) / TD;
+			
+			/* Control saturation */
+			if (control_tilt > 100.f) {
+				control_tilt = 100.f;
+			} else if (control_tilt < -100.f) {
+				control_tilt = -100.f;
+			}
+			
+			/* Previous values */
+			prev2_control_tilt = prev_control_tilt;
+			prev_control_tilt = control_tilt;
+			prev2_error_tilt = prev_error_tilt;
+			prev_error_tilt = error_tilt;
+			
+			control_end_tilt = tilt_pid_enable ? sp_tilt_servo_angle_inertial - control_tilt : sp_tilt_servo_angle_inertial;
+			output_tilt = TILT_ZERO + (int16_t)((control_end_tilt*2.f / (float)JOYSTICK_ZERO) * TILT_DELTA);
+			
+			/* Control end saturation */
+			if (control_end_tilt > 60.f) {
+				control_end_tilt = 60.f;
+			} else if (control_end_tilt < -60.f) {
+				control_end_tilt = -60.f;
+			}
+		
+			/* Roll has no PID, only inertion */
+			control_end_roll = control_end_roll*TF/(TF+TPR) + sp_roll_joystick*TPR/(TF+TPR);
+			output_roll = ROLL_ZERO + (int16_t)((((float)control_end_roll - (float)JOYSTICK_ZERO) / (float)JOYSTICK_ZERO) * ROLL_DELTA);
+			
 		} else {
+			/* Reset all servo input */
 			sp_roll_joystick = JOYSTICK_ZERO;
 			sp_tilt_joystick = JOYSTICK_ZERO;
+			output_roll = ROLL_ZERO;
+			output_tilt = TILT_ZERO;
 		}
 		
-		/* Convert joystick tilt setpoint (0-240) to servo tilt angle setpoint (-60 to 60) */
-		sp_tilt_servo_angle = (float32_t)(sp_tilt_joystick - JOYSTICK_ZERO) / 2.f;
-		sp_tilt_sphere_angle = 
-		P1 * sp_tilt_servo_angle * sp_tilt_servo_angle * sp_tilt_servo_angle + 
-		P2 * sp_tilt_servo_angle * sp_tilt_servo_angle + 
-		P3 * sp_tilt_servo_angle;
-		
-		/* PID algorithm for tilt */
-		error_tilt = sp_tilt_sphere_angle - tilt_sphere_angle;
-		control_tilt = 
-		  (error_tilt * s_E1 + 
-			prev_error_tilt * s_E2 +
-  		prev2_error_tilt * s_E3 + 
-		  prev_control_tilt * s_U1 + 
-		  prev2_control_tilt * s_U2) / TD;
-		
-		/* Control saturation */
-		if (control_tilt > 100.f) {
-			control_tilt = 100.f;
-		} else if (control_tilt < -100.f) {
-			control_tilt = -100.f;
-		}
-		
-		/* Previous values */
-		prev2_control_tilt = prev_control_tilt;
-	  prev_control_tilt = control_tilt;
-		prev2_error_tilt = prev_error_tilt;
-		prev_error_tilt = error_tilt;
-
-		control_end_tilt = tilt_pid_enable ? sp_tilt_servo_angle - control_tilt : sp_tilt_servo_angle;
-		
-		/* Control end saturation */
-		if (control_end_tilt > 60.f) {
-			control_end_tilt = 60.f;
-		} else if (control_end_tilt < -60.f) {
-			control_end_tilt = -60.f;
-		}
-		
-		output_tilt = TILT_ZERO + (int16_t)((control_end_tilt*2.f / (float)JOYSTICK_ZERO) * TILT_DELTA);
-		
-		/* Roll has no PID, only inertion */
-		control_end_roll = control_end_roll*TF/(TF+TPR) + sp_roll_joystick*TPR/(TF+TPR);
-		output_roll = ROLL_ZERO + (int16_t)((((float)control_end_roll - (float)JOYSTICK_ZERO) / (float)JOYSTICK_ZERO) * ROLL_DELTA);
-
 		/* fill global struct */
 		osMutexAcquire(robotStateMutex_id, osWaitForever);
 		g_wheatley.roll_servo = output_roll;

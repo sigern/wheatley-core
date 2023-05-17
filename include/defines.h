@@ -22,8 +22,12 @@
 #define KP   0.7f
 #define KI   -0.2f
 #define KD   -0.2f
-#define	TD   0.1f
-#define TPT  0.014f
+#define	TD   0.2f
+#define TPT  0.03f
+
+/* Inertia defines for roll control */
+#define TPR_T  0.1f
+#define TF_T   0.35f
 
 /* Inertia defines for roll control */
 #define TPR  0.01f
